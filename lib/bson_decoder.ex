@@ -295,11 +295,15 @@ defmodule Bson.Decoder do
   defp float(<<f::64-float-little, rest::binary>>, max), do: {max-8, rest, f}
   defp float(buffer, restsize), do: %Error{what: [:float], rest: {restsize, buffer}}
 
-  defp cstring(buffer, max, acc \\ [])
-  defp cstring(<<0, rest::binary>>, max, acc), do: {max-1, rest, reverse_binof(acc)}
-  defp cstring(<<c, rest::binary>>, max, acc), do: cstring(rest, max-1, [c|acc])
-  defp cstring(_, 0, _), do: %Error{}
-  defp cstring(<<>>, _, _), do: %Error{}
+  defp cstring(buffer, max) do
+    case :binary.match(buffer, "\0") do
+      {pos, _len} ->
+        <<cstr::size(pos)-binary, 0::size(8), rest::binary>> = buffer
+        {max - pos - 1, rest, cstr}
+      :nomatch ->
+        %Error{}
+    end
+  end
 
   defp elist(buffer, 0, _), do: {buffer, %{}}
   defp elist(buffer, restsize, opts, elist \\ [])
@@ -330,13 +334,15 @@ defmodule Bson.Decoder do
         end
     end
   end
-
-  defp skip_cstring(buffer, max)
-  defp skip_cstring(<<0, rest::binary>>, max), do: {max-1, rest}
-  defp skip_cstring(<<_, rest::binary>>, max), do: skip_cstring(rest, max-1)
-  defp skip_cstring(_, 0), do: %Error{}
-  defp skip_cstring(<<>>, _), do: %Error{}
-
-  defp reverse_binof(iolist), do: iolist |> Enum.reverse |> :erlang.iolist_to_binary
-
+  
+  defp skip_cstring(buffer, max) do
+    case :binary.match(buffer, "\0") do
+      {pos, _len} ->
+        pos = pos + 1
+        <<_::size(pos)-binary, rest::binary>> = buffer
+        {max - pos, rest}
+      :nomatch ->
+        %Error{}
+    end
+  end
 end
